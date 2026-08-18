@@ -28,7 +28,10 @@ const isSingleOriginDev = process.env.T3CODE_SINGLE_ORIGIN_DEV === "1";
 
 const port = Number(process.env.PORT ?? 5733);
 const explicitHost = process.env.HOST?.trim();
-const host = explicitHost || "localhost";
+// `localhost` binds only the first family Node resolves (::1 on this machine),
+// which leaves the IPv4 loopback dead for `tailscale serve`'s 127.0.0.1 proxy
+// target and produces a blank page over the tailnet. Bind both loopbacks.
+const host = explicitHost || ["127.0.0.1", "::1"];
 const configuredWsUrl = isSingleOriginDev ? undefined : process.env.VITE_WS_URL?.trim();
 const configuredHttpUrl = isSingleOriginDev ? undefined : process.env.VITE_HTTP_URL?.trim();
 const configuredRelayUrl = repoEnv.VITE_T3CODE_RELAY_URL?.trim() || "";

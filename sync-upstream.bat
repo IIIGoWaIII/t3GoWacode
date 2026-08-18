@@ -56,8 +56,22 @@ echo [6/6] installing deps and starting shared dev server...
 set "PATH=%~dp0node_modules\.bin;%PATH%"
 call vp i
 if errorlevel 1 goto fail
+
+rem --- local patch guard: apps/web/vite.config.ts loopback binding (see opencode_agent.html) ---
+findstr /C:"Bind both loopbacks" "%~dp0apps\web\vite.config.ts" >nul 2>nul
+if errorlevel 1 (
+  echo.
+  echo WARNING: the local apps/web/vite.config.ts loopback patch is missing.
+  echo          Without it the shared tailnet URL 502s on phones (blank white page).
+  echo          Have a coding agent restore it - see opencode_agent.html section
+  echo          "Vite loopback binding fix".
+  echo.
+)
+
 echo.
-echo        Starting dev server (shared). Watch for the "pairingUrl:" line.
+echo        Starting dev server (shared on tailnet).
+echo        On your phone: open the "pairingUrl:" line printed below (or scan its QR).
+echo        Fresh phone link any time:  node apps/server/src/bin.ts pair
 call vp run dev --share
 if errorlevel 1 goto fail
 

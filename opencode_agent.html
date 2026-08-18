@@ -126,11 +126,12 @@
 
     <h2>Context</h2>
     <p>
-      This is a fork of T3 Code. The fork keeps exactly one patch on top of upstream: a fix to the
+      This is a fork of T3 Code. The fork keeps two patches on top of upstream: a fix to the
       OpenCode provider adapter that surfaces OpenCode native <code>Task</code> subagents in the
-      Agents panel, including background tasks that finished while a previous session was idle. The
-      sync script rebases <code>main</code> onto <code>upstream/main</code> and force-pushes to the
-      fork, so this patch is re-applied on every sync and can conflict.
+      Agents panel, including background tasks that finished while a previous session was idle, and
+      a Vite loopback binding fix that makes <code>vp run dev --share</code> reachable from a phone
+      over the tailnet. The sync script rebases <code>main</code> onto <code>upstream/main</code>
+      and force-pushes to the fork, so both patches are re-applied on every sync and can conflict.
     </p>
 
     <p>Related upstream work that may already be merged and that overlaps this fix:</p>
@@ -392,14 +393,54 @@ git rebase --continue
       while <code>#7393</code> is in flight.
     </p>
 
+    <h2>Second patch: Vite loopback binding</h2>
+    <p>
+      A second fork-local fix lives in <code>apps/web/vite.config.ts</code>. It is unrelated to the
+      OpenCode adapter above but must survive the same rebase.
+    </p>
+
+    <p>
+      <b>Problem.</b> The web dev server binds <code>localhost</code>. On machines where Node
+      resolves <code>localhost</code> to <code>::1</code> first (Windows with IPv6), Vite opens only
+      the IPv6 loopback. <code>tailscale serve</code> (used by <code>vp run dev --share</code>)
+      proxies to <code>http://127.0.0.1:&lt;webPort&gt;</code>, so every tailnet request hits a dead
+      IPv4 port and the pairing URL renders a blank white page on a phone.
+    </p>
+
+    <p><b>Fix.</b> Bind both loopback families unless an explicit <code>HOST</code> is set:</p>
+    <pre><code>// `localhost` binds only the first family Node resolves (::1 on this machine),
+// which leaves the IPv4 loopback dead for `tailscale serve`'s 127.0.0.1 proxy
+// target and produces a blank page over the tailnet. Bind both loopbacks.
+const host = explicitHost || ["127.0.0.1", "::1"];</code></pre>
+    <p>
+      Keep the <code>// Bind both loopbacks</code> comment — <code>sync-upstream.bat</code> greps
+      for it and prints a warning when the patch is missing.
+    </p>
+
+    <p><b>Verify.</b> With the dev server running, all three must respond HTTP 200:</p>
+    <pre><code># IPv4 loopback (tailscale serve's proxy target)
+Invoke-WebRequest -UseBasicParsing http://127.0.0.1:5733/
+# IPv6 loopback (localhost on IPv6-first machines)
+Invoke-WebRequest -UseBasicParsing http://[::1]:5733/
+# the tailnet URL printed at startup (replace the machine/tailnet name)
+Invoke-WebRequest -UseBasicParsing https://&lt;machine&gt;.&lt;tailnet&gt;.ts.net:5733/</code></pre>
+
+    <p>
+      <b>If upstream refactors Vite's host handling.</b> Preserve the intent: the dev server must
+      answer on both <code>127.0.0.1</code> and <code>::1</code> when <code>HOST</code> is unset.
+      Adopt upstream's structure and port the dual-loopback bind onto it. Never regress to a
+      single-family <code>localhost</code> bind.
+    </p>
+
     <h2>Agent instructions</h2>
     <div class="callout good">
       You are resolving a rebase conflict in the T3 Code fork during
-      <code>sync-upstream.bat</code> step 4. The fork ships exactly one local patch (the OpenCode
-      Task lifecycle fix described above) on top of upstream <code>main</code>. Resolve the
-      conflicts so the finished behavior listed in "What the fix does" still holds and the focused
-      adapter tests pass. Then run <code>git add .</code> and <code>git rebase --continue</code>,
-      and tell the user to re-run <code>sync-upstream.bat</code>.
+      <code>sync-upstream.bat</code> step 4. The fork ships exactly two local patches (the OpenCode
+      Task lifecycle fix and the Vite loopback binding fix described above) on top of upstream
+      <code>main</code>. Resolve the conflicts so the finished behavior listed in "What the fix
+      does" still holds, the dual-loopback Vite bind survives, and the focused adapter tests pass.
+      Then run <code>git add .</code> and <code>git rebase --continue</code>, and tell the user to
+      re-run <code>sync-upstream.bat</code>.
     </div>
   </body>
 </html>
