@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenCode Task Lifecycle Fix: Rebase Conflict Guide</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #000;
+        color: #fff;
+        font:
+          15px/1.55 system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 32px 20px 96px;
+      }
+      h1 {
+        font-size: 26px;
+        margin: 0 0 4px;
+      }
+      h2 {
+        font-size: 19px;
+        margin: 44px 0 12px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid #333;
+      }
+      h3 {
+        font-size: 16px;
+        margin: 28px 0 8px;
+      }
+      p,
+      li {
+        color: #d4d4d4;
+      }
+      a {
+        color: #6cb2ff;
+      }
+      code {
+        font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+        font-size: 13px;
+        background: #161616;
+        padding: 1px 5px;
+        border-radius: 4px;
+      }
+      pre {
+        background: #161616;
+        border: 1px solid #333;
+        border-radius: 8px;
+        padding: 14px;
+        overflow-x: auto;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      pre code {
+        background: none;
+        padding: 0;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 12px 0;
+        font-size: 14px;
+      }
+      th,
+      td {
+        border: 1px solid #333;
+        padding: 8px 10px;
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        background: #161616;
+        color: #fff;
+      }
+      .badge {
+        display: inline-block;
+        background: #222;
+        border: 1px solid #444;
+        border-radius: 999px;
+        padding: 1px 10px;
+        font-size: 12px;
+        margin-right: 6px;
+      }
+      .callout {
+        border-left: 4px solid #f5a623;
+        background: #1c1607;
+        padding: 10px 14px;
+        margin: 16px 0;
+        border-radius: 0 8px 8px 0;
+      }
+      .callout.good {
+        border-left-color: #3ecf6a;
+        background: #071c0d;
+      }
+      .stepnum {
+        display: inline-block;
+        min-width: 22px;
+        font-weight: 700;
+        color: #6cb2ff;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>OpenCode Task Lifecycle Fix</h1>
+    <p>
+      Rebase conflict guide for <code>sync-upstream.bat</code> step 4. Read this before touching the
+      working tree. It explains what the local fix does, what must survive a rebase, and how to
+      resolve conflicts when they appear.
+    </p>
+
+    <p>
+      <span class="badge">Repo: IIIGoWaIII/t3GoWacode</span>
+      <span class="badge">Upstream: pingdotgg/t3code</span>
+      <span class="badge">Fork-local fix</span>
+    </p>
+
+    <h2>Context</h2>
+    <p>
+      This is a fork of T3 Code. The fork keeps exactly one patch on top of upstream: a fix to the
+      OpenCode provider adapter that surfaces OpenCode native <code>Task</code> subagents in the
+      Agents panel, including background tasks that finished while a previous session was idle. The
+      sync script rebases <code>main</code> onto <code>upstream/main</code> and force-pushes to the
+      fork, so this patch is re-applied on every sync and can conflict.
+    </p>
+
+    <p>Related upstream work that may already be merged and that overlaps this fix:</p>
+    <table>
+      <tr>
+        <th>Reference</th>
+        <th>What it is</th>
+        <th>Relationship</th>
+      </tr>
+      <tr>
+        <td>
+          <a
+            href="https://github.com/pingdotgg/t3code/pull/7393"
+            target="_blank"
+            rel="noopener noreferrer"
+            >pingdotgg/t3code#7393</a
+          >
+        </td>
+        <td>
+          "feat(opencode): show native Task subagents in the Agents panel" (inayayousfi).
+          Alternative implementation of the same feature.
+        </td>
+        <td>
+          If merged upstream it directly conflicts with the local patch. Prefer its structure, port
+          the local hardening onto it.
+        </td>
+      </tr>
+      <tr>
+        <td>
+          <a
+            href="https://github.com/inayayousfi/t3code/pull/1"
+            target="_blank"
+            rel="noopener noreferrer"
+            >inayayousfi/t3code#1</a
+          >
+        </td>
+        <td>
+          Validation sibling PR by jamie-dit; closed because its base was outdated. Its three
+          findings (stored background completions after reconnect, Task-like closing tags truncating
+          results, event subscription failure reporting success) were reimplemented by the PR
+          author.
+        </td>
+        <td>Read-only reference. The local patch already covers the same edge cases.</td>
+      </tr>
+    </table>
+
+    <div class="callout">
+      The rebase rewrites commit hashes. Do not rely on <code>eb1f7809</code> by name. Inspect the
+      actual commit with <code>git log -1</code> and judge by content, not hash.
+    </div>
+
+    <h2>What the fix does</h2>
+    <p>
+      Files touched by the patch:
+      <code>apps/server/src/provider/Layers/OpenCodeAdapter.ts</code> (+403),
+      <code>apps/server/src/provider/Layers/OpenCodeAdapter.test.ts</code> (+1552/-8),
+      <code>pnpm-lock.yaml</code> (+2).
+    </p>
+
+    <p>The finished behavior that must keep working:</p>
+    <ol>
+      <li>
+        <b>Foreground tasks.</b> A tool part of type <code>task</code> drives
+        <code>task.started</code>, <code>task.updated</code>, <code>task.completed</code> lifecycle
+        events that render as rows in the Agents panel, without hiding the tool row.
+      </li>
+      <li>
+        <b>Background tasks.</b> A terminal completion arriving as a synthetic
+        <code>&lt;task&gt;...&lt;/task&gt;</code> text envelope, or as
+        <code>&lt;task_result&gt;</code>/<code>&lt;task_error&gt;</code> child parts in a user
+        message, emits <code>task.completed</code> with a clean summary.
+      </li>
+      <li>
+        <b>Resume / reconnect.</b> When a session is reused, prior task history is hydrated from
+        <code>session.messages</code>, seeding lifecycle state and emitting synthetic terminal
+        notices. Live task events arriving during hydration are buffered and drained afterwards.
+      </li>
+      <li>
+        <b>Isolation.</b> Forked sessions (a cwd change) do not hydrate cloned background history.
+      </li>
+      <li>
+        <b>Safety.</b> Completed <code>task_id</code> values are not revived. Forged nested
+        envelopes do not create phantom tasks.
+      </li>
+    </ol>
+
+    <h2>Key functions and state</h2>
+    <p>New state on the session context:</p>
+    <pre><code>taskLifecycleByPartId: Map&lt;string, OpenCodeTaskLifecycle&gt;
+taskLifecycleByTaskId:  Map&lt;string, OpenCodeTaskLifecycle&gt;
+taskHydration: { active: boolean; bufferedEvents: OpenCodeSubscribedEvent[] }
+reused: boolean   // from resolveSession: true for reuse, false for created/forked</code></pre>
+
+    <table>
+      <tr>
+        <th>Function</th>
+        <th>Semantics</th>
+      </tr>
+      <tr>
+        <td><code>taskLifecycleFromPart(part)</code></td>
+        <td>
+          Extracts a lifecycle from a tool part: <code>taskId</code> (from <code>task_id</code> or
+          <code>sessionID</code>/<code>sessionId</code>), model (providerID/modelID),
+          <code>description</code>, <code>subagent_type</code>, <code>background</code>,
+          <code>title</code>.
+        </td>
+      </tr>
+      <tr>
+        <td><code>OPENCODE_TASK_ENVELOPE_PATTERN</code></td>
+        <td>
+          Regex for <code>&lt;task id="..." state="completed|error"&gt;...&lt;/task&gt;</code> with
+          child <code>&lt;task_result&gt;</code>/<code>&lt;task_error&gt;</code> tags.
+        </td>
+      </tr>
+      <tr>
+        <td><code>taskNotificationsFromPart(part)</code></td>
+        <td>
+          Yields terminal notifications found in synthetic shapes (user-message text or parts).
+        </td>
+      </tr>
+      <tr>
+        <td><code>emitTaskNotification(context, notification, turnId, part)</code></td>
+        <td>Emits <code>task.completed</code> from a terminal notice.</td>
+      </tr>
+      <tr>
+        <td><code>reconcileTaskToolPart(context, part, turnId, event, opts)</code></td>
+        <td>
+          Central projector for tool parts. Emits
+          <code>task.started</code>/<code>task.updated</code>/<code>task.completed</code>, updates
+          both maps, honors the reactivation guard. <code>backgroundOnly</code> mode is used during
+          hydration so foreground rows are not duplicated.
+        </td>
+      </tr>
+      <tr>
+        <td><code>hydrateReusedTaskHistory(context)</code></td>
+        <td>
+          Reads <code>session.messages</code>, seeds lifecycle from assistant tool parts with
+          <code>backgroundOnly</code>, emits notifications from user-message shapes. Never replays
+          foreground history.
+        </td>
+      </tr>
+      <tr>
+        <td><code>isTaskLifecycleEvent(event)</code></td>
+        <td>
+          True for <code>message.part.updated</code> on a <code>task</code> tool part or a part
+          carrying notifications.
+        </td>
+      </tr>
+      <tr>
+        <td><code>handleSubscribedEvent(context, event, {bypassTaskHydration})</code></td>
+        <td>
+          While <code>taskHydration.active</code> is set, task-lifecycle events are buffered into
+          <code>bufferedEvents</code> instead of processed.
+          <code>bypassTaskHydration: true</code> disables the buffering for the drain pass.
+        </td>
+      </tr>
+      <tr>
+        <td><code>drainTaskHydration(context)</code></td>
+        <td>Replays buffered events with the bypass flag, then clears <code>active</code>.</td>
+      </tr>
+      <tr>
+        <td><code>startEventPump(context)</code></td>
+        <td>
+          Establishes <code>event.subscribe</code> <b>before</b> any history replay so a background
+          completion cannot arrive between snapshot and subscribe. An initial subscription rejection
+          fails session startup. The stream stays scope-owned.
+        </td>
+      </tr>
+    </table>
+
+    <p>Session start ordering that matters:</p>
+    <ol>
+      <li><code>event.subscribe</code> (subscription established first)</li>
+      <li>emit <code>session.started</code> / <code>thread.started</code></li>
+      <li>exit gate check</li>
+      <li>
+        if <code>reused</code>: <code>hydrateReusedTaskHistory</code> then
+        <code>drainTaskHydration</code>
+      </li>
+      <li>
+        the event stream pumps; task events arriving during step 4 are buffered and drained right
+        after
+      </li>
+    </ol>
+
+    <p>
+      Forked sessions (<code>reused: false</code>) skip step 4 entirely. This is deliberate
+      isolation, not an omission.
+    </p>
+
+    <h2>Conflict playbook</h2>
+
+    <h3>apps/server/src/provider/Layers/OpenCodeAdapter.ts</h3>
+    <ol>
+      <li>
+        For every conflicted hunk, read both sides:
+        <code>git show upstream/main:apps/server/src/provider/Layers/OpenCodeAdapter.ts</code> and
+        the local <code>HEAD</code> version.
+      </li>
+      <li>
+        <b>If upstream already tracks Task lifecycle</b> (its <code>#7393</code> implementation
+        merged): adopt upstream's structure and port the local hardening onto it: hydration with
+        live-event buffering, envelope/notification parsing, the reactivation guard, and
+        subscribe-before-replay ordering.
+      </li>
+      <li><b>If upstream does not:</b> take the local hunk unchanged.</li>
+      <li>
+        Keep both maps plus the <code>taskHydration</code> state on the session context. Keep
+        <code>reused</code> coming out of <code>resolveSession</code>.
+      </li>
+      <li>
+        Keep the ordering in <code>startEventPump</code>: subscribe first, then stream. Keep
+        <code>handleSubscribedEvent</code> buffering while hydration is active.
+      </li>
+      <li>
+        If upstream added an equivalent helper under a different name, drop the local one and rewire
+        call sites. Never keep two implementations of the same behavior.
+      </li>
+      <li>
+        Move comments with the code they describe. If a comment no longer matches after the merge,
+        update it.
+      </li>
+    </ol>
+
+    <h3>apps/server/src/provider/Layers/OpenCodeAdapter.test.ts</h3>
+    <ol>
+      <li>
+        Upstream may add its own Task tests. Keep both: upstream tests cover the base feature, local
+        tests cover the hardening. Drop only exact duplicates.
+      </li>
+      <li>
+        Local tests depend on the SDK fake and session fixtures. If upstream changed the test
+        harness, port the local tests to the new harness rather than fighting it.
+      </li>
+      <li>
+        Do not delete a local test to make the suite pass. A removed test is a removed guarantee.
+      </li>
+    </ol>
+
+    <h3>pnpm-lock.yaml</h3>
+    <ol>
+      <li>Do not hand-edit the lockfile. It only gained two deprecation entries.</li>
+      <li>
+        After resolving code, run <code>vp i</code> (or <code>pnpm install</code>) from the repo
+        root to regenerate it, then stage it.
+      </li>
+    </ol>
+
+    <h2>Verify before continuing</h2>
+    <p>Run from the repo root:</p>
+    <pre><code>vp test run apps/server/src/provider/Layers/OpenCodeAdapter.test.ts
+# targeted typecheck for apps/server
+git add .
+git rebase --continue
+</code></pre>
+    <p>
+      Then re-run <code>sync-upstream.bat</code> to finish the sync (push + install + dev:share).
+      The patch is a rebase conflict only when upstream touched the same regions, which is expected
+      while <code>#7393</code> is in flight.
+    </p>
+
+    <h2>Agent instructions</h2>
+    <div class="callout good">
+      You are resolving a rebase conflict in the T3 Code fork during
+      <code>sync-upstream.bat</code> step 4. The fork ships exactly one local patch (the OpenCode
+      Task lifecycle fix described above) on top of upstream <code>main</code>. Resolve the
+      conflicts so the finished behavior listed in "What the fix does" still holds and the focused
+      adapter tests pass. Then run <code>git add .</code> and <code>git rebase --continue</code>,
+      and tell the user to re-run <code>sync-upstream.bat</code>.
+    </div>
+  </body>
+</html>

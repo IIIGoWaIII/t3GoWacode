@@ -4,6 +4,9 @@ T3 Code is an "agent harness control surface". It enables control of the agents 
 
 Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, and OpenCode. If they're set up on your computer, T3 Code can control them.
 
+> [!NOTE]
+> This is a fork of T3 Code. It is normal T3 Code with one patch: native OpenCode agents (Task subagents) actually work and show up in the Agents panel. Once upstream fixes OpenCode agents themselves, this fork will be deleted and you can switch back to upstream. To keep this fork in sync with upstream, run `sync-upstream.bat`.
+
 ## "Wait, what are you selling me?"
 
 Nothing. We built T3 Code because we wanted the best possible development experience with agents. We were inspired by existing solutions like the Codex desktop app, Conductor, Claude Desktop and Cursor Glass, but none met our bar.
